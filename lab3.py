@@ -36,7 +36,7 @@ TRANSFER_ROUNDS = 3
 
 
 
-#=============================<Helper Fuctions>=================================
+#=============================<Helper Functions>=================================
 '''
 TODO: implement this.
 This function should take the tensor and re-convert it to an image.
@@ -101,7 +101,7 @@ First, make sure the model is set up properly.
 Then construct the loss function (from content and style loss).
 Gradient functions will also need to be created, or you can use K.Gradients().
 Finally, do the style transfer with gradient descent.
-Save the newly generated and deprocessed images.
+Save the newly generated and de-processed images.
 '''
 def styleTransfer(cData, sData, tData):
     print("   Building transfer model.")
