@@ -4,7 +4,8 @@ import tensorflow as tf
 from tensorflow import keras
 import tensorflow.keras.backend as K
 import random
-from scipy.misc import imsave, imresize
+import imageio
+from PIL import Image
 from scipy.optimize import fmin_l_bfgs_b   # https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.fmin_l_bfgs_b.html
 from tensorflow.keras.applications import vgg19
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
@@ -89,7 +90,8 @@ def preprocessData(raw):
     img = img_to_array(img)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        img = imresize(img, (ih, iw, 3))
+        img_temp = Image.fromarray(img, 'RGB').resize((ih, iw))
+        img = np.array(img_temp)
     img = img.astype("float64")
     img = np.expand_dims(img, axis=0)
     img = vgg19.preprocess_input(img)
