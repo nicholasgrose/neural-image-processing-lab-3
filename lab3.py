@@ -57,7 +57,11 @@ def gramMatrix(x):
 #========================<Loss Function Builder Functions>======================
 
 def styleLoss(style, gen):
-    return None   #TODO: implement.
+    styleShape = style.shape
+    M = (styleShape[0] * styleShape[1]) ** 2
+    N = styleShape[2] ** 2
+    error = K.sum(K.square(gramMatrix(style) - gramMatrix(gen))) / (4 * N * M)
+    return error
 
 
 def contentLoss(content, gen):
@@ -122,10 +126,14 @@ def styleTransfer(cData, sData, tData):
     contentLayer = outputDict[contentLayerName]
     contentOutput = contentLayer[0, :, :, :]
     genOutput = contentLayer[2, :, :, :]
-    loss += None   #TODO: implement.
+    loss += CONTENT_WEIGHT * contentLoss(contentOutput, genOutput) / 2
     print("   Calculating style loss.")
     for layerName in styleLayerNames:
-        loss += None   #TODO: implement.
+        styleLayer = outputDict[layerName]
+        styleOutput = styleLayer[0, :, :, :]
+        genOutput = styleLayer[2, :, :, :]
+        layerWeight = 1 / activeLayers(layerName)
+        loss += STYLE_WEIGHT * layerWeight * styleLoss(styleOutput, genOutput)
     loss += None   #TODO: implement.
     # TODO: Setup gradients or use K.gradients().
     print("   Beginning transfer.")
@@ -139,7 +147,13 @@ def styleTransfer(cData, sData, tData):
         print("      Image saved to \"%s\"." % saveFile)
     print("   Transfer complete.")
 
-
+def activeLayers(model: keras.Model, layerName: str) -> int:
+    layerCount = 1
+    for layer in model.layers:
+        if layer.name == layerName:
+            break
+        layerCount += 1
+    return layerCount
 
 
 
