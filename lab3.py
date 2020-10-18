@@ -18,8 +18,9 @@ tf.random.set_seed(1618)
 #tf.logging.set_verbosity(tf.logging.ERROR)   # Uncomment for TF1.
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-CONTENT_IMG_PATH = ""           #TODO: Add this.
-STYLE_IMG_PATH = ""             #TODO: Add this.
+SAMPLE = 1
+CONTENT_IMG_PATH = f"./shared/style_transfer/transfer_sample{SAMPLE}/content.jpg"
+STYLE_IMG_PATH = f"./shared/style_transfer/transfer_sample{SAMPLE}/style.jpg"
 
 
 CONTENT_IMG_H = 500
@@ -109,7 +110,7 @@ def styleTransfer(cData, sData, tData):
     styleTensor = K.variable(sData)
     genTensor = K.placeholder((1, CONTENT_IMG_H, CONTENT_IMG_W, 3))
     inputTensor = K.concatenate([contentTensor, styleTensor, genTensor], axis=0)
-    model = None   #TODO: implement.
+    model = vgg19.VGG19(include_top=False, input_tensor=inputTensor)
     outputDict = dict([(layer.name, layer.output) for layer in model.layers])
     print("   VGG19 model loaded.")
     loss = 0.0
@@ -131,7 +132,7 @@ def styleTransfer(cData, sData, tData):
         #TODO: perform gradient descent using fmin_l_bfgs_b.
         print("      Loss: %f." % tLoss)
         img = deprocessImage(x)
-        saveFile = None   #TODO: Implement.
+        saveFile = f"./shared/style_transfer/transfer_sample{SAMPLE}/result.jpg"
         #imsave(saveFile, img)   #Uncomment when everything is working right.
         print("      Image saved to \"%s\"." % saveFile)
     print("   Transfer complete.")
