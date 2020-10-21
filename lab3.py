@@ -59,19 +59,19 @@ def gramMatrix(x):
 class Wrapper:
     def __init__(self, content: np.ndarray, style: np.ndarray, gen: np.ndarray):
         tf.compat.v1.disable_eager_execution()
-        self.sess = tf.compat.v1.Session()
+        K.set_floatx('float64')
         self.content = content
         self.style = style
         self.gen = gen
-        self.model = self.construct_model(content, style, gen)
-
-    def construct_model(self, content: np.ndarray, style: np.ndarray, gen: np.ndarray) -> keras.Model:
         print("   Building transfer model.")
         contentTensor = K.variable(content)
         styleTensor = K.variable(style)
         # genTensor = K.placeholder((1, CONTENT_IMG_H, CONTENT_IMG_W, 3))
         genTensor = K.variable(gen)
         inputTensor = K.concatenate([contentTensor, styleTensor, genTensor], axis=0)
+        self.model = self.construct_model(inputTensor)
+
+    def construct_model(self, inputTensor: tf.Tensor) -> keras.Model:
         return vgg19.VGG19(include_top=False, input_tensor=inputTensor)
 
     def styleLoss(self, style: np.ndarray, gen: np.ndarray) -> tf.Tensor:
@@ -86,6 +86,7 @@ class Wrapper:
 
     def totalLoss(self, output: np.ndarray) -> tf.Tensor:
         output = K.reshape(output, (3, CONTENT_IMG_H, CONTENT_IMG_W, 3))
+        self.model = self.construct_model(output)
         outputDict = dict([(layer.name, layer.output) for layer in self.model.layers])
         loss = 0.0
         styleLayerNames = ["block1_conv1", "block2_conv1", "block3_conv1", "block4_conv1", "block5_conv1"]
@@ -112,6 +113,12 @@ class Wrapper:
                 break
             layerCount += 1
         return layerCount
+
+    def gradient(self, x):
+        # self.model = self.construct_model(output)
+        grads = K.gradients(self.totalLoss(x), self.model.inputs)
+        grads = K.flatten(grads)
+        return grads
 
 
 #=========================<Pipeline Functions>==================================
@@ -149,15 +156,16 @@ Gradient functions will also need to be created, or you can use K.Gradients().
 Finally, do the style transfer with gradient descent.
 Save the newly generated and de-processed images.
 '''
+wrapper = None
 def styleTransfer(cData, sData, tData):
     print("   VGG19 model loaded.")
+    global wrapper
     wrapper = Wrapper(cData, sData, tData)
-    gradientFunc = lambda x : K.gradients(wrapper.totalLoss(x), x)
     # TODO: Setup gradients or use K.gradients().
     print("   Beginning transfer.")
     for i in range(TRANSFER_ROUNDS):
         print("   Step %d." % i)
-        x, tLoss, d = fmin_l_bfgs_b(wrapper.totalLoss, np.array([cData, sData, tData]), fprime=gradientFunc, maxiter=1000, maxfun=30)
+        x, tLoss, d = fmin_l_bfgs_b(wrapper.totalLoss, np.array([cData, sData, tData]), fprime=wrapper.gradient, maxiter=1000, maxfun=30)
         #TODO: perform gradient descent using fmin_l_bfgs_b.
         print("      Loss: %f." % tLoss)
         img = deprocessImage(x)
@@ -165,7 +173,6 @@ def styleTransfer(cData, sData, tData):
         imageio.imwrite(saveFile, img)   #Uncomment when everything is working right.
         print("      Image saved to \"%s\"." % saveFile)
     print("   Transfer complete.")
-
 
 #=========================<Main>================================================
 
