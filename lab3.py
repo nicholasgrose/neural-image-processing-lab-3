@@ -133,12 +133,12 @@ def styleTransfer(cData, sData, tData):
     model = vgg19.VGG19(include_top=False, input_tensor=inputTensor)
     print("   VGG19 model loaded.")
     lossFunc = lambda gen : calculateTotalLoss(model, gen)   #TODO: implement.
-    gradientFunc = lambda gen : K.gradients(lossFunc(gen), model.inputs)
+    gradientFunc = lambda gen : K.gradients(lossFunc(gen), gen)
     # TODO: Setup gradients or use K.gradients().
     print("   Beginning transfer.")
     for i in range(TRANSFER_ROUNDS):
         print("   Step %d." % i)
-        x, tLoss, d = fmin_l_bfgs_b(lossFunc, tData, gradientFunc, maxiter=1000, maxfun=30)
+        x, tLoss, d = fmin_l_bfgs_b(lossFunc, tData, fprime=gradientFunc, maxiter=1000, maxfun=30)
         #TODO: perform gradient descent using fmin_l_bfgs_b.
         print("      Loss: %f." % tLoss)
         img = deprocessImage(x)
