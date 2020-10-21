@@ -86,7 +86,6 @@ class Wrapper:
 
     def totalLoss(self, output: np.ndarray) -> tf.Tensor:
         output = K.reshape(output, (3, CONTENT_IMG_H, CONTENT_IMG_W, 3))
-        self.model = self.construct_model(output)
         outputDict = dict([(layer.name, layer.output) for layer in self.model.layers])
         loss = 0.0
         styleLayerNames = ["block1_conv1", "block2_conv1", "block3_conv1", "block4_conv1", "block5_conv1"]
@@ -103,7 +102,7 @@ class Wrapper:
             genOutput = styleLayer[2, :, :, :]
             layerWeight = 1 / self.activeLayers(layerName)
             loss += STYLE_WEIGHT * layerWeight * self.styleLoss(styleOutput, genOutput)
-        print(f"=========================================================================={loss.shape}")
+        print(f"=========================================================================={loss}")
         return loss
 
     def activeLayers(self, layerName: str) -> int:
@@ -114,11 +113,12 @@ class Wrapper:
             layerCount += 1
         return layerCount
 
-    def gradient(self, x):
-        # self.model = self.construct_model(output)
+    def gradient(self, x: np.ndarray) -> tf.Tensor:
         grads = K.gradients(self.totalLoss(x), self.model.inputs)
-        grads = K.flatten(grads)
-        return grads
+        self.model = self.construct_model(
+            K.reshape(x, (3, CONTENT_IMG_H, CONTENT_IMG_W, 3))
+        )
+        return K.flatten(grads)
 
 
 #=========================<Pipeline Functions>==================================
@@ -161,12 +161,10 @@ def styleTransfer(cData, sData, tData):
     print("   VGG19 model loaded.")
     global wrapper
     wrapper = Wrapper(cData, sData, tData)
-    # TODO: Setup gradients or use K.gradients().
     print("   Beginning transfer.")
     for i in range(TRANSFER_ROUNDS):
         print("   Step %d." % i)
         x, tLoss, d = fmin_l_bfgs_b(wrapper.totalLoss, np.array([cData, sData, tData]), fprime=wrapper.gradient, maxiter=1000, maxfun=30)
-        #TODO: perform gradient descent using fmin_l_bfgs_b.
         print("      Loss: %f." % tLoss)
         img = deprocessImage(x)
         saveFile = f"./shared/style_transfer/transfer_sample{SAMPLE}/result.jpg"
