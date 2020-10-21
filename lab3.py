@@ -44,7 +44,7 @@ TODO: implement this.
 This function should take the tensor and re-convert it to an image.
 '''
 def deprocessImage(img):
-    return img
+    return Image.fromarray(img, 'rgb')
 
 
 def gramMatrix(x):
@@ -135,15 +135,17 @@ def styleTransfer(cData, sData, tData):
         layerWeight = 1 / activeLayers(layerName)
         loss += STYLE_WEIGHT * layerWeight * styleLoss(styleOutput, genOutput)
     loss += None   #TODO: implement.
+    gradients = K.gradients(loss, tData)
     # TODO: Setup gradients or use K.gradients().
     print("   Beginning transfer.")
     for i in range(TRANSFER_ROUNDS):
         print("   Step %d." % i)
+        x, tLoss, d = fmin_l_bfgs_b(totalLoss, tData, gradients, maxiter=1000, maxFun=30)
         #TODO: perform gradient descent using fmin_l_bfgs_b.
         print("      Loss: %f." % tLoss)
         img = deprocessImage(x)
         saveFile = f"./shared/style_transfer/transfer_sample{SAMPLE}/result.jpg"
-        #imsave(saveFile, img)   #Uncomment when everything is working right.
+        imageio.imwrite(saveFile, img)   #Uncomment when everything is working right.
         print("      Image saved to \"%s\"." % saveFile)
     print("   Transfer complete.")
 
