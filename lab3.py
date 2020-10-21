@@ -1,5 +1,6 @@
 import os
 import numpy as np
+from scipy.optimize.optimize import fmin
 import tensorflow as tf
 from tensorflow import keras
 import tensorflow.keras.backend as K
@@ -55,37 +56,62 @@ def gramMatrix(x):
 
 
 #========================<Loss Function Builder Functions>======================
+class Wrapper:
+    def __init__(self, content: np.ndarray, style: np.ndarray, gen: np.ndarray):
+        tf.compat.v1.disable_eager_execution()
+        self.sess = tf.compat.v1.Session()
+        self.content = content
+        self.style = style
+        self.gen = gen
+        self.model = self.construct_model(content, style, gen)
 
-def styleLoss(style, gen):
-    styleShape = style.shape
-    M = (styleShape[0] * styleShape[1]) ** 2
-    N = styleShape[2] ** 2
-    error = K.sum(K.square(gramMatrix(style) - gramMatrix(gen))) / (4 * N * M)
-    return error
+    def construct_model(self, content: np.ndarray, style: np.ndarray, gen: np.ndarray) -> keras.Model:
+        print("   Building transfer model.")
+        contentTensor = K.variable(content)
+        styleTensor = K.variable(style)
+        # genTensor = K.placeholder((1, CONTENT_IMG_H, CONTENT_IMG_W, 3))
+        genTensor = K.variable(gen)
+        inputTensor = K.concatenate([contentTensor, styleTensor, genTensor], axis=0)
+        return vgg19.VGG19(include_top=False, input_tensor=inputTensor)
 
-def contentLoss(content, gen):
-    return K.sum(K.square(gen - content))
+    def styleLoss(self, style: np.ndarray, gen: np.ndarray) -> tf.Tensor:
+        styleShape = style.shape
+        M = (styleShape[0] * styleShape[1]) ** 2
+        N = styleShape[2] ** 2
+        error = K.sum(K.square(gramMatrix(style) - gramMatrix(gen))) / (4 * N * M)
+        return error
 
-def calculateTotalLoss(model, genOutput):
-    outputDict = dict([(layer.name, layer.output) for layer in model.layers])
-    loss = 0.0
-    styleLayerNames = ["block1_conv1", "block2_conv1", "block3_conv1", "block4_conv1", "block5_conv1"]
-    contentLayerName = "block5_conv2"
-    print("   Calculating content loss.")
-    contentLayer = outputDict[contentLayerName]
-    contentOutput = contentLayer[0, :, :, :]
-    genOutput = contentLayer[2, :, :, :]
-    loss += CONTENT_WEIGHT * contentLoss(contentOutput, genOutput) / 2
-    print("   Calculating style loss.")
-    for layerName in styleLayerNames:
-        styleLayer = outputDict[layerName]
-        styleOutput = styleLayer[0, :, :, :]
-        genOutput = styleLayer[2, :, :, :]
-        layerWeight = 1 / activeLayers(model, layerName)
-        loss += STYLE_WEIGHT * layerWeight * styleLoss(styleOutput, genOutput)
-    return loss
+    def contentLoss(self, content: np.ndarray, gen: np.ndarray) -> tf.Tensor:
+        return K.sum(K.square(gen - content))
 
+    def totalLoss(self, output: np.ndarray) -> tf.Tensor:
+        output = K.reshape(output, (3, CONTENT_IMG_H, CONTENT_IMG_W, 3))
+        outputDict = dict([(layer.name, layer.output) for layer in self.model.layers])
+        loss = 0.0
+        styleLayerNames = ["block1_conv1", "block2_conv1", "block3_conv1", "block4_conv1", "block5_conv1"]
+        contentLayerName = "block5_conv2"
+        print("   Calculating content loss.")
+        contentLayer = outputDict[contentLayerName]
+        contentOutput = contentLayer[0, :, :, :]
+        genOutput = contentLayer[2, :, :, :]
+        loss += CONTENT_WEIGHT * self.contentLoss(contentOutput, genOutput) / 2
+        print("   Calculating style loss.")
+        for layerName in styleLayerNames:
+            styleLayer = outputDict[layerName]
+            styleOutput = styleLayer[0, :, :, :]
+            genOutput = styleLayer[2, :, :, :]
+            layerWeight = 1 / self.activeLayers(layerName)
+            loss += STYLE_WEIGHT * layerWeight * self.styleLoss(styleOutput, genOutput)
+        print(f"=========================================================================={loss.shape}")
+        return loss
 
+    def activeLayers(self, layerName: str) -> int:
+        layerCount = 1
+        for layer in self.model.layers:
+            if layer.name == layerName:
+                break
+            layerCount += 1
+        return layerCount
 
 
 #=========================<Pipeline Functions>==================================
@@ -124,21 +150,14 @@ Finally, do the style transfer with gradient descent.
 Save the newly generated and de-processed images.
 '''
 def styleTransfer(cData, sData, tData):
-    tf.compat.v1.disable_eager_execution()
-    print("   Building transfer model.")
-    contentTensor = K.variable(cData)
-    styleTensor = K.variable(sData)
-    genTensor = K.placeholder((1, CONTENT_IMG_H, CONTENT_IMG_W, 3))
-    inputTensor = K.concatenate([contentTensor, styleTensor, genTensor], axis=0)
-    model = vgg19.VGG19(include_top=False, input_tensor=inputTensor)
     print("   VGG19 model loaded.")
-    lossFunc = lambda gen : calculateTotalLoss(model, gen)   #TODO: implement.
-    gradientFunc = lambda gen : K.gradients(lossFunc(gen), gen)
+    wrapper = Wrapper(cData, sData, tData)
+    gradientFunc = lambda x : K.gradients(wrapper.totalLoss(x), x)
     # TODO: Setup gradients or use K.gradients().
     print("   Beginning transfer.")
     for i in range(TRANSFER_ROUNDS):
         print("   Step %d." % i)
-        x, tLoss, d = fmin_l_bfgs_b(lossFunc, tData, fprime=gradientFunc, maxiter=1000, maxfun=30)
+        x, tLoss, d = fmin_l_bfgs_b(wrapper.totalLoss, np.array([cData, sData, tData]), fprime=gradientFunc, maxiter=1000, maxfun=30)
         #TODO: perform gradient descent using fmin_l_bfgs_b.
         print("      Loss: %f." % tLoss)
         img = deprocessImage(x)
@@ -146,15 +165,6 @@ def styleTransfer(cData, sData, tData):
         imageio.imwrite(saveFile, img)   #Uncomment when everything is working right.
         print("      Image saved to \"%s\"." % saveFile)
     print("   Transfer complete.")
-
-def activeLayers(model: keras.Model, layerName: str) -> int:
-    layerCount = 1
-    for layer in model.layers:
-        if layer.name == layerName:
-            break
-        layerCount += 1
-    return layerCount
-
 
 
 #=========================<Main>================================================
