@@ -63,14 +63,27 @@ def styleLoss(style, gen):
     error = K.sum(K.square(gramMatrix(style) - gramMatrix(gen))) / (4 * N * M)
     return error
 
-
 def contentLoss(content, gen):
     return K.sum(K.square(gen - content))
 
-
-def totalLoss(x):
-    return None   #TODO: implement.
-
+def calculateTotalLoss(model, genOutput):
+    outputDict = dict([(layer.name, layer.output) for layer in model.layers])
+    loss = 0.0
+    styleLayerNames = ["block1_conv1", "block2_conv1", "block3_conv1", "block4_conv1", "block5_conv1"]
+    contentLayerName = "block5_conv2"
+    print("   Calculating content loss.")
+    contentLayer = outputDict[contentLayerName]
+    contentOutput = contentLayer[0, :, :, :]
+    genOutput = contentLayer[2, :, :, :]
+    loss += CONTENT_WEIGHT * contentLoss(contentOutput, genOutput) / 2
+    print("   Calculating style loss.")
+    for layerName in styleLayerNames:
+        styleLayer = outputDict[layerName]
+        styleOutput = styleLayer[0, :, :, :]
+        genOutput = styleLayer[2, :, :, :]
+        layerWeight = 1 / activeLayers(model, layerName)
+        loss += STYLE_WEIGHT * layerWeight * styleLoss(styleOutput, genOutput)
+    return loss
 
 
 
@@ -111,36 +124,21 @@ Finally, do the style transfer with gradient descent.
 Save the newly generated and de-processed images.
 '''
 def styleTransfer(cData, sData, tData):
+    tf.compat.v1.disable_eager_execution()
     print("   Building transfer model.")
     contentTensor = K.variable(cData)
     styleTensor = K.variable(sData)
     genTensor = K.placeholder((1, CONTENT_IMG_H, CONTENT_IMG_W, 3))
     inputTensor = K.concatenate([contentTensor, styleTensor, genTensor], axis=0)
     model = vgg19.VGG19(include_top=False, input_tensor=inputTensor)
-    outputDict = dict([(layer.name, layer.output) for layer in model.layers])
     print("   VGG19 model loaded.")
-    loss = 0.0
-    styleLayerNames = ["block1_conv1", "block2_conv1", "block3_conv1", "block4_conv1", "block5_conv1"]
-    contentLayerName = "block5_conv2"
-    print("   Calculating content loss.")
-    contentLayer = outputDict[contentLayerName]
-    contentOutput = contentLayer[0, :, :, :]
-    genOutput = contentLayer[2, :, :, :]
-    loss += CONTENT_WEIGHT * contentLoss(contentOutput, genOutput) / 2
-    print("   Calculating style loss.")
-    for layerName in styleLayerNames:
-        styleLayer = outputDict[layerName]
-        styleOutput = styleLayer[0, :, :, :]
-        genOutput = styleLayer[2, :, :, :]
-        layerWeight = 1 / activeLayers(layerName)
-        loss += STYLE_WEIGHT * layerWeight * styleLoss(styleOutput, genOutput)
-    loss += None   #TODO: implement.
-    gradients = K.gradients(loss, tData)
+    lossFunc = lambda gen : calculateTotalLoss(model, gen)   #TODO: implement.
+    gradientFunc = lambda gen : K.gradients(lossFunc(gen), model.inputs)
     # TODO: Setup gradients or use K.gradients().
     print("   Beginning transfer.")
     for i in range(TRANSFER_ROUNDS):
         print("   Step %d." % i)
-        x, tLoss, d = fmin_l_bfgs_b(totalLoss, tData, gradients, maxiter=1000, maxFun=30)
+        x, tLoss, d = fmin_l_bfgs_b(lossFunc, tData, gradientFunc, maxiter=1000, maxfun=30)
         #TODO: perform gradient descent using fmin_l_bfgs_b.
         print("      Loss: %f." % tLoss)
         img = deprocessImage(x)
