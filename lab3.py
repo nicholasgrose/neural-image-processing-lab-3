@@ -66,25 +66,25 @@ class Wrapper:
         print("   Building transfer model.")
         contentTensor = K.variable(content)
         styleTensor = K.variable(style)
-        # genTensor = K.placeholder((1, CONTENT_IMG_H, CONTENT_IMG_W, 3))
-        genTensor = K.variable(gen)
-        inputTensor = K.concatenate([contentTensor, styleTensor, genTensor], axis=0)
+        self.genTensor = K.placeholder((1, CONTENT_IMG_H, CONTENT_IMG_W, 3))
+        inputTensor = K.concatenate([contentTensor, styleTensor, self.genTensor], axis=0)
         self.model = self.construct_model(inputTensor)
+        self.session = tf.compat.v1.keras.backend.get_session()
 
     def construct_model(self, inputTensor: tf.Tensor) -> keras.Model:
         return vgg19.VGG19(include_top=False, input_tensor=inputTensor)
 
-    def styleLoss(self, style: np.ndarray, gen: np.ndarray) -> tf.Tensor:
+    def styleLoss(self, style: tf.Tensor, gen: tf.Tensor) -> tf.Tensor:
         styleShape = style.shape
         M = (styleShape[0] * styleShape[1]) ** 2
         N = styleShape[2] ** 2
         error = K.sum(K.square(gramMatrix(style) - gramMatrix(gen))) / (4 * N * M)
         return error
 
-    def contentLoss(self, content: np.ndarray, gen: np.ndarray) -> tf.Tensor:
+    def contentLoss(self, content: tf.Tensor, gen: tf.Tensor) -> tf.Tensor:
         return K.sum(K.square(gen - content))
 
-    def totalLoss(self, output: np.ndarray) -> tf.Tensor:
+    def totalLoss(self, output: np.ndarray) -> np.double:
         output = K.reshape(output, (3, CONTENT_IMG_H, CONTENT_IMG_W, 3))
         outputDict = dict([(layer.name, layer.output) for layer in self.model.layers])
         loss = 0.0
@@ -98,10 +98,12 @@ class Wrapper:
         print("   Calculating style loss.")
         for layerName in styleLayerNames:
             styleLayer = outputDict[layerName]
-            styleOutput = styleLayer[0, :, :, :]
+            styleOutput = styleLayer[1, :, :, :]
             genOutput = styleLayer[2, :, :, :]
             layerWeight = 1 / self.activeLayers(layerName)
             loss += STYLE_WEIGHT * layerWeight * self.styleLoss(styleOutput, genOutput)
+        gen = self.session.run(K.reshape(output[2], (1, CONTENT_IMG_H, CONTENT_IMG_W, 3)))
+        loss = self.session.run(loss, feed_dict={self.genTensor: gen})
         print(f"=========================================================================={loss}")
         return loss
 
@@ -113,12 +115,14 @@ class Wrapper:
             layerCount += 1
         return layerCount
 
-    def gradient(self, x: np.ndarray) -> tf.Tensor:
-        grads = K.gradients(self.totalLoss(x), self.model.inputs)
-        self.model = self.construct_model(
-            K.reshape(x, (3, CONTENT_IMG_H, CONTENT_IMG_W, 3))
-        )
-        return K.flatten(grads)
+    def gradient(self, x: np.ndarray) -> np.ndarray:
+        loss = self.totalLoss(x)
+        print(self.model.inputs)
+        grads = K.gradients(loss, self.model.inputs)
+        # self.model = self.construct_model(x)
+        print(grads)
+        grads = K.flatten(grads)
+        return self.session.run(grads, feed_dict={self.genTensor: self.gen})
 
 
 #=========================<Pipeline Functions>==================================
@@ -156,15 +160,19 @@ Gradient functions will also need to be created, or you can use K.Gradients().
 Finally, do the style transfer with gradient descent.
 Save the newly generated and de-processed images.
 '''
-wrapper = None
 def styleTransfer(cData, sData, tData):
     print("   VGG19 model loaded.")
-    global wrapper
     wrapper = Wrapper(cData, sData, tData)
     print("   Beginning transfer.")
     for i in range(TRANSFER_ROUNDS):
         print("   Step %d." % i)
-        x, tLoss, d = fmin_l_bfgs_b(wrapper.totalLoss, np.array([cData, sData, tData]), fprime=wrapper.gradient, maxiter=1000, maxfun=30)
+        x, tLoss, d = fmin_l_bfgs_b(
+            wrapper.totalLoss,
+            np.array([cData, sData, tData]),
+            fprime=wrapper.gradient,
+            maxiter=1000,
+            maxfun=30
+        )
         print("      Loss: %f." % tLoss)
         img = deprocessImage(x)
         saveFile = f"./shared/style_transfer/transfer_sample{SAMPLE}/result.jpg"
