@@ -7,23 +7,24 @@ import tensorflow.keras.backend as K
 import random
 import imageio
 from PIL import Image
-from scipy.optimize import fmin_l_bfgs_b   # https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.fmin_l_bfgs_b.html
+from scipy.optimize import \
+    fmin_l_bfgs_b  # https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.fmin_l_bfgs_b.html
 from tensorflow.keras.applications import vgg19
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
 import warnings
 
 random.seed(1618)
 np.random.seed(1618)
-#tf.set_random_seed(1618)   # Uncomment for TF1.
+tf.compat.v1.set_random_seed(1618)  # Uncomment for TF1.
 tf.random.set_seed(1618)
 
-#tf.logging.set_verbosity(tf.logging.ERROR)   # Uncomment for TF1.
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)  # Uncomment for TF1.
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 SAMPLE = 1
-CONTENT_IMG_PATH = f"./shared/style_transfer/transfer_sample{SAMPLE}/content.jpg"
-STYLE_IMG_PATH = f"./shared/style_transfer/transfer_sample{SAMPLE}/style.jpg"
-
+IMG_DIR_PATH = f"/content/style_transfer/transfer_sample{SAMPLE}"
+CONTENT_IMG_PATH = f"{IMG_DIR_PATH}/content.jpg"
+STYLE_IMG_PATH = f"{IMG_DIR_PATH}/style.jpg"
 
 CONTENT_IMG_H = 500
 CONTENT_IMG_W = 500
@@ -31,19 +32,19 @@ CONTENT_IMG_W = 500
 STYLE_IMG_H = 500
 STYLE_IMG_W = 500
 
-CONTENT_WEIGHT = 0.1    # Alpha weight.
-STYLE_WEIGHT = 1.0      # Beta weight.
+CONTENT_WEIGHT = 0.1  # Alpha weight.
+STYLE_WEIGHT = 1.0  # Beta weight.
 TOTAL_WEIGHT = 1.0
 
 TRANSFER_ROUNDS = 3
 
-
-
-#=============================<Helper Functions>=================================
+# =============================<Helper Functions>=================================
 '''
 TODO: implement this.
 This function should take the tensor and re-convert it to an image.
 '''
+
+
 def deprocessImage(img):
     return Image.fromarray(img, 'rgb')
 
@@ -54,25 +55,22 @@ def gramMatrix(x):
     return gram
 
 
-
-#========================<Loss Function Builder Functions>======================
+# ========================<Loss Function Builder Functions>======================
 class Wrapper:
-    def __init__(self, content: np.ndarray, style: np.ndarray, gen: np.ndarray):
+    def __init__(self, content: np.ndarray, style: np.ndarray):
         tf.compat.v1.disable_eager_execution()
         K.set_floatx('float64')
         self.content = content
         self.style = style
-        self.gen = gen
         print("   Building transfer model.")
-        contentTensor = K.variable(content)
-        styleTensor = K.variable(style)
+        self.contentTensor = K.variable(self.content)
+        self.styleTensor = K.variable(self.style)
         self.genTensor = K.placeholder((1, CONTENT_IMG_H, CONTENT_IMG_W, 3))
-        inputTensor = K.concatenate([contentTensor, styleTensor, self.genTensor], axis=0)
-        self.model = self.construct_model(inputTensor)
+        self.inputTensor = K.concatenate([self.contentTensor, self.styleTensor, self.genTensor], axis=0)
         self.session = tf.compat.v1.keras.backend.get_session()
-
-    def construct_model(self, inputTensor: tf.Tensor) -> keras.Model:
-        return vgg19.VGG19(include_top=False, input_tensor=inputTensor)
+        self.model = vgg19.VGG19(include_top=False, input_tensor=self.inputTensor)
+        self.totalLoss = self.constructTotalLoss()
+        self.gradient = self.constructGradient()
 
     def styleLoss(self, style: tf.Tensor, gen: tf.Tensor) -> tf.Tensor:
         styleShape = style.shape
@@ -84,8 +82,7 @@ class Wrapper:
     def contentLoss(self, content: tf.Tensor, gen: tf.Tensor) -> tf.Tensor:
         return K.sum(K.square(gen - content))
 
-    def totalLoss(self, output: np.ndarray) -> np.double:
-        output = K.reshape(output, (3, CONTENT_IMG_H, CONTENT_IMG_W, 3))
+    def constructTotalLoss(self) -> tf.Tensor:
         outputDict = dict([(layer.name, layer.output) for layer in self.model.layers])
         loss = 0.0
         styleLayerNames = ["block1_conv1", "block2_conv1", "block3_conv1", "block4_conv1", "block5_conv1"]
@@ -102,9 +99,11 @@ class Wrapper:
             genOutput = styleLayer[2, :, :, :]
             layerWeight = 1 / self.activeLayers(layerName)
             loss += STYLE_WEIGHT * layerWeight * self.styleLoss(styleOutput, genOutput)
-        gen = self.session.run(K.reshape(output[2], (1, CONTENT_IMG_H, CONTENT_IMG_W, 3)))
-        loss = self.session.run(loss, feed_dict={self.genTensor: gen})
-        print(f"=========================================================================={loss}")
+        return loss
+
+    def computeTotalLoss(self, gen: np.ndarray) -> np.double:
+        gen.resize((1, CONTENT_IMG_W, CONTENT_IMG_H, 3))
+        loss = self.session.run(self.totalLoss, feed_dict={self.genTensor: gen})
         return loss
 
     def activeLayers(self, layerName: str) -> int:
@@ -115,17 +114,20 @@ class Wrapper:
             layerCount += 1
         return layerCount
 
-    def gradient(self, x: np.ndarray) -> np.ndarray:
-        loss = self.totalLoss(x)
-        print(self.model.inputs)
-        grads = K.gradients(loss, self.model.inputs)
-        # self.model = self.construct_model(x)
-        print(grads)
-        grads = K.flatten(grads)
-        return self.session.run(grads, feed_dict={self.genTensor: self.gen})
+    def constructGradient(self) -> tf.Tensor:
+        return K.gradients(self.totalLoss, self.genTensor)[0]
+
+    def computeGradient(self, gen: np.ndarray) -> np.ndarray:
+        gen.resize((1, CONTENT_IMG_W, CONTENT_IMG_H, 3))
+        grads = self.session.run(self.gradient, feed_dict={self.genTensor: gen})
+        grads = np.asfortranarray(grads)
+        print(grads.flags)
+        print(grads.shape)
+        print(np.isfortran(grads))
+        return grads
 
 
-#=========================<Pipeline Functions>==================================
+# =========================<Pipeline Functions>==================================
 
 def getRawData():
     print("   Loading images.")
@@ -135,8 +137,8 @@ def getRawData():
     tImg = cImg.copy()
     sImg = load_img(STYLE_IMG_PATH)
     print("      Images have been loaded.")
-    return ((cImg, CONTENT_IMG_H, CONTENT_IMG_W), (sImg, STYLE_IMG_H, STYLE_IMG_W), (tImg, CONTENT_IMG_H, CONTENT_IMG_W))
-
+    return (
+        (cImg, CONTENT_IMG_H, CONTENT_IMG_W), (sImg, STYLE_IMG_H, STYLE_IMG_W), (tImg, CONTENT_IMG_H, CONTENT_IMG_W))
 
 
 def preprocessData(raw):
@@ -145,11 +147,11 @@ def preprocessData(raw):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         img_temp = Image.fromarray(img, 'RGB').resize((ih, iw))
-        img = np.array(img_temp)
+        img = np.array(img_temp, order='F')
     img = img.astype("float64")
     img = np.expand_dims(img, axis=0)
     img = vgg19.preprocess_input(img)
-    return img
+    return img.copy(order='F')
 
 
 '''
@@ -160,37 +162,39 @@ Gradient functions will also need to be created, or you can use K.Gradients().
 Finally, do the style transfer with gradient descent.
 Save the newly generated and de-processed images.
 '''
+
+
 def styleTransfer(cData, sData, tData):
     print("   VGG19 model loaded.")
-    wrapper = Wrapper(cData, sData, tData)
+    wrapper = Wrapper(cData, sData)
     print("   Beginning transfer.")
     for i in range(TRANSFER_ROUNDS):
         print("   Step %d." % i)
         x, tLoss, d = fmin_l_bfgs_b(
-            wrapper.totalLoss,
-            np.array([cData, sData, tData]),
-            fprime=wrapper.gradient,
+            wrapper.computeTotalLoss,
+            tData,
+            fprime=wrapper.computeGradient,
             maxiter=1000,
             maxfun=30
         )
         print("      Loss: %f." % tLoss)
         img = deprocessImage(x)
         saveFile = f"./shared/style_transfer/transfer_sample{SAMPLE}/result.jpg"
-        imageio.imwrite(saveFile, img)   #Uncomment when everything is working right.
+        imageio.imwrite(saveFile, img)  # Uncomment when everything is working right.
         print("      Image saved to \"%s\"." % saveFile)
     print("   Transfer complete.")
 
-#=========================<Main>================================================
+
+# =========================<Main>================================================
 
 def main():
     print("Starting style transfer program.")
     raw = getRawData()
-    cData = preprocessData(raw[0])   # Content image.
-    sData = preprocessData(raw[1])   # Style image.
-    tData = preprocessData(raw[2])   # Transfer image.
+    cData = preprocessData(raw[0])  # Content image.
+    sData = preprocessData(raw[1])  # Style image.
+    tData = preprocessData(raw[2])  # Transfer image.
     styleTransfer(cData, sData, tData)
     print("Done. Goodbye.")
-
 
 
 if __name__ == "__main__":
