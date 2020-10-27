@@ -46,7 +46,8 @@ This function should take the tensor and re-convert it to an image.
 
 
 def deprocessImage(img):
-    return Image.fromarray(img, 'rgb')
+    img = img.reshape((STYLE_IMG_H, STYLE_IMG_W, 3))
+    return Image.fromarray(img, 'RGB')
 
 
 def gramMatrix(x):
@@ -111,7 +112,7 @@ class Wrapper:
         return layerCount
 
     def computeTotalLoss(self, gen: np.ndarray) -> np.float64:
-        gen.resize((1, CONTENT_IMG_W, CONTENT_IMG_H, 3))
+        gen = gen.reshape((1, CONTENT_IMG_W, CONTENT_IMG_H, 3))
         self.runOutput = self.kerasFunction([gen])
         loss = self.runOutput[0]
         return loss
@@ -182,10 +183,9 @@ def styleTransfer(cData, sData, tData):
         print("      Loss: %f." % tLoss)
         img = deprocessImage(x)
         saveFile = f"{IMG_DIR_PATH}/result.jpg"
-        imageio.imwrite(saveFile, img)  # Uncomment when everything is working right.
+        img.save(saveFile)  # Uncomment when everything is working right.
         print("      Image saved to \"%s\"." % saveFile)
     print("   Transfer complete.")
-
 
 # =========================<Main>================================================
 
