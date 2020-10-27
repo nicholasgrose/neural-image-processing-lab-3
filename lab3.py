@@ -22,7 +22,7 @@ tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)  # Uncomment for 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 SAMPLE = 1
-IMG_DIR_PATH = f"/content/style_transfer/transfer_sample{SAMPLE}"
+IMG_DIR_PATH = f"/home/nicholas/transfer_sample{SAMPLE}"
 CONTENT_IMG_PATH = f"{IMG_DIR_PATH}/content.jpg"
 STYLE_IMG_PATH = f"{IMG_DIR_PATH}/style.jpg"
 
@@ -33,7 +33,7 @@ STYLE_IMG_H = 500
 STYLE_IMG_W = 500
 
 CONTENT_WEIGHT = 0.1  # Alpha weight.
-STYLE_WEIGHT = 1.0  # Beta weight.
+STYLE_WEIGHT = 0.9  # Beta weight.
 TOTAL_WEIGHT = 1.0
 
 TRANSFER_ROUNDS = 3
@@ -67,10 +67,11 @@ class Wrapper:
         self.styleTensor = K.variable(self.style)
         self.genTensor = K.placeholder((1, CONTENT_IMG_H, CONTENT_IMG_W, 3))
         self.inputTensor = K.concatenate([self.contentTensor, self.styleTensor, self.genTensor], axis=0)
-        self.session = tf.compat.v1.keras.backend.get_session()
         self.model = vgg19.VGG19(include_top=False, input_tensor=self.inputTensor)
         self.totalLoss = self.constructTotalLoss()
         self.gradient = self.constructGradient()
+        self.kerasFunction = self.constructKerasFunction()
+        self.runOutput = None
 
     def styleLoss(self, style: tf.Tensor, gen: tf.Tensor) -> tf.Tensor:
         styleShape = style.shape
@@ -101,11 +102,6 @@ class Wrapper:
             loss += STYLE_WEIGHT * layerWeight * self.styleLoss(styleOutput, genOutput)
         return loss
 
-    def computeTotalLoss(self, gen: np.ndarray) -> np.double:
-        gen.resize((1, CONTENT_IMG_W, CONTENT_IMG_H, 3))
-        loss = self.session.run(self.totalLoss, feed_dict={self.genTensor: gen})
-        return loss
-
     def activeLayers(self, layerName: str) -> int:
         layerCount = 1
         for layer in self.model.layers:
@@ -114,16 +110,22 @@ class Wrapper:
             layerCount += 1
         return layerCount
 
+    def computeTotalLoss(self, gen: np.ndarray) -> np.float64:
+        gen.resize((1, CONTENT_IMG_W, CONTENT_IMG_H, 3))
+        self.runOutput = self.kerasFunction([gen])
+        loss = self.runOutput[0]
+        return loss
+
     def constructGradient(self) -> tf.Tensor:
-        return K.gradients(self.totalLoss, self.genTensor)[0]
+        grads = K.gradients(self.totalLoss, self.genTensor)
+        return grads
+
+    def constructKerasFunction(self):
+        outputs = [self.totalLoss, self.gradient]
+        return K.function([self.genTensor], outputs)
 
     def computeGradient(self, gen: np.ndarray) -> np.ndarray:
-        gen.resize((1, CONTENT_IMG_W, CONTENT_IMG_H, 3))
-        grads = self.session.run(self.gradient, feed_dict={self.genTensor: gen})
-        grads = np.asfortranarray(grads)
-        print(grads.flags)
-        print(grads.shape)
-        print(np.isfortran(grads))
+        grads = self.runOutput[1][0].flatten()
         return grads
 
 
@@ -147,11 +149,11 @@ def preprocessData(raw):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         img_temp = Image.fromarray(img, 'RGB').resize((ih, iw))
-        img = np.array(img_temp, order='F')
+        img = np.array(img_temp)
     img = img.astype("float64")
     img = np.expand_dims(img, axis=0)
     img = vgg19.preprocess_input(img)
-    return img.copy(order='F')
+    return np.copy(img, order='F')
 
 
 '''
@@ -179,7 +181,7 @@ def styleTransfer(cData, sData, tData):
         )
         print("      Loss: %f." % tLoss)
         img = deprocessImage(x)
-        saveFile = f"./shared/style_transfer/transfer_sample{SAMPLE}/result.jpg"
+        saveFile = f"{IMG_DIR_PATH}/result.jpg"
         imageio.imwrite(saveFile, img)  # Uncomment when everything is working right.
         print("      Image saved to \"%s\"." % saveFile)
     print("   Transfer complete.")
