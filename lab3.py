@@ -5,13 +5,15 @@ import tensorflow as tf
 from tensorflow import keras
 import tensorflow.keras.backend as K
 import random
-import imageio
 from PIL import Image
 from scipy.optimize import \
     fmin_l_bfgs_b  # https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.fmin_l_bfgs_b.html
 from tensorflow.keras.applications import vgg19
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
 import warnings
+
+dev = tf.config.list_physical_devices('GPU')[0]
+config = tf.config.experimental.set_memory_growth(dev, True)
 
 random.seed(1618)
 np.random.seed(1618)
@@ -22,7 +24,7 @@ tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)  # Uncomment for 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 SAMPLE = 1
-IMG_DIR_PATH = f"/home/nicholas/transfer_sample{SAMPLE}"
+IMG_DIR_PATH = f"C:/Users/nicho/Desktop"
 CONTENT_IMG_PATH = f"{IMG_DIR_PATH}/content.jpg"
 STYLE_IMG_PATH = f"{IMG_DIR_PATH}/style.jpg"
 
@@ -32,8 +34,8 @@ CONTENT_IMG_W = 500
 STYLE_IMG_H = 500
 STYLE_IMG_W = 500
 
-CONTENT_WEIGHT = 0.1  # Alpha weight.
-STYLE_WEIGHT = 0.9  # Beta weight.
+CONTENT_WEIGHT = 0.02  # Alpha weight.
+STYLE_WEIGHT = 0.98  # Beta weight.
 TOTAL_WEIGHT = 1.0
 
 TRANSFER_ROUNDS = 3
@@ -181,7 +183,7 @@ def styleTransfer(cData, sData, tData):
             wrapper.computeTotalLoss,
             tData,
             fprime=wrapper.computeGradient,
-            maxiter=1000,
+            maxiter=5000,
             maxfun=30
         )
         print("      Loss: %f." % tLoss)
