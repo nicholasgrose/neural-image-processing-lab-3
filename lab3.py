@@ -46,7 +46,12 @@ This function should take the tensor and re-convert it to an image.
 
 
 def deprocessImage(img):
-    img = img.reshape((STYLE_IMG_H, STYLE_IMG_W, 3))
+    img = np.copy(img).reshape((STYLE_IMG_H, STYLE_IMG_W, 3))
+    img[:, :, 0] += 103.939
+    img[:, :, 1] += 116.779
+    img[:, :, 2] += 123.68
+    img = img[:, :, ::-1]
+    img = np.clip(img, 0, 255).astype("uint8")
     return Image.fromarray(img, 'RGB')
 
 
@@ -146,15 +151,14 @@ def getRawData():
 
 def preprocessData(raw):
     img, ih, iw = raw
-    img = img_to_array(img)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        img_temp = Image.fromarray(img, 'RGB').resize((ih, iw))
+        img_temp = img.resize((ih, iw))
         img = np.array(img_temp)
     img = img.astype("float64")
     img = np.expand_dims(img, axis=0)
     img = vgg19.preprocess_input(img)
-    return np.copy(img, order='F')
+    return img
 
 
 '''
@@ -182,7 +186,7 @@ def styleTransfer(cData, sData, tData):
         )
         print("      Loss: %f." % tLoss)
         img = deprocessImage(x)
-        saveFile = f"{IMG_DIR_PATH}/result.jpg"
+        saveFile = f"{IMG_DIR_PATH}/result{i}.jpg"
         img.save(saveFile)  # Uncomment when everything is working right.
         print("      Image saved to \"%s\"." % saveFile)
     print("   Transfer complete.")
