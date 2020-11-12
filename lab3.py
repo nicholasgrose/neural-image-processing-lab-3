@@ -11,6 +11,8 @@ from scipy.optimize import \
 from tensorflow.keras.applications import vgg19
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
 import warnings
+import os
+import multiprocessing as mp
 
 dev = tf.config.list_physical_devices('GPU')[0]
 config = tf.config.experimental.set_memory_growth(dev, True)
@@ -24,9 +26,10 @@ tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)  # Uncomment for 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 SAMPLE = 1
-IMG_DIR_PATH = f"C:/Users/nicho/Desktop"
-CONTENT_IMG_PATH = f"{IMG_DIR_PATH}/content.jpg"
+IMG_DIR_PATH = f"D:/Projects/Github/neural-image-processing-lab-3/images"
+CONTENT_IMG_DIR_PATH = f"{IMG_DIR_PATH}/content"
 STYLE_IMG_PATH = f"{IMG_DIR_PATH}/style.jpg"
+RESULT_IMG_DIR_PATH = f"{IMG_DIR_PATH}/results"
 
 CONTENT_IMG_H = 500
 CONTENT_IMG_W = 500
@@ -38,7 +41,7 @@ CONTENT_WEIGHT = 0.02  # Alpha weight.
 STYLE_WEIGHT = 0.98  # Beta weight.
 TOTAL_WEIGHT = 1.0
 
-TRANSFER_ROUNDS = 3
+TRANSFER_ROUNDS = 1
 
 # =============================<Helper Functions>=================================
 '''
@@ -139,13 +142,13 @@ class Wrapper:
 
 # =========================<Pipeline Functions>==================================
 
-def getRawData():
+def getRawData(content_path, style_path):
     print("   Loading images.")
-    print("      Content image URL:  \"%s\"." % CONTENT_IMG_PATH)
+    print("      Content image URL:  \"%s\"." % CONTENT_IMG_DIR_PATH)
     print("      Style image URL:    \"%s\"." % STYLE_IMG_PATH)
-    cImg = load_img(CONTENT_IMG_PATH)
+    cImg = load_img(content_path)
     tImg = cImg.copy()
-    sImg = load_img(STYLE_IMG_PATH)
+    sImg = load_img(style_path)
     print("      Images have been loaded.")
     return (
         (cImg, CONTENT_IMG_H, CONTENT_IMG_W), (sImg, STYLE_IMG_H, STYLE_IMG_W), (tImg, CONTENT_IMG_H, CONTENT_IMG_W))
@@ -173,7 +176,7 @@ Save the newly generated and de-processed images.
 '''
 
 
-def styleTransfer(cData, sData, tData):
+def styleTransfer(cData, sData, tData, saveFile):
     print("   VGG19 model loaded.")
     wrapper = Wrapper(cData, sData)
     print("   Beginning transfer.")
@@ -188,20 +191,27 @@ def styleTransfer(cData, sData, tData):
         )
         print("      Loss: %f." % tLoss)
         img = deprocessImage(x)
-        saveFile = f"{IMG_DIR_PATH}/result{i}.jpg"
         img.save(saveFile)  # Uncomment when everything is working right.
         print("      Image saved to \"%s\"." % saveFile)
     print("   Transfer complete.")
 
 # =========================<Main>================================================
 
-def main():
-    print("Starting style transfer program.")
-    raw = getRawData()
+def run_model(i):
+    print(f"Beginning transfer of content{i}.")
+    raw = getRawData(f'{CONTENT_IMG_DIR_PATH}/content{i}.jpg', STYLE_IMG_PATH)
     cData = preprocessData(raw[0])  # Content image.
     sData = preprocessData(raw[1])  # Style image.
     tData = preprocessData(raw[2])  # Transfer image.
-    styleTransfer(cData, sData, tData)
+    styleTransfer(cData, sData, tData, f"{RESULT_IMG_DIR_PATH}/style{i}.jpg")
+
+
+def main():
+    print("Starting style transfer program.")
+    for i in range(len(os.listdir(CONTENT_IMG_DIR_PATH))):
+        process = mp.Process(target=run_model, args=[i])
+        process.start()
+        process.join()
     print("Done. Goodbye.")
 
 

@@ -132,4 +132,7 @@ dmypy.json
 .idea/
 
 # VSCode
+.vscode/
 .history/
+
+images/
